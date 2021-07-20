@@ -201,6 +201,7 @@ class Minuit:
     @strategy.setter
     def strategy(self, value: int) -> None:
         self._strategy.strategy = value
+        self._fcn._check_gradient = value > 1
 
     @property
     def print_level(self) -> int:

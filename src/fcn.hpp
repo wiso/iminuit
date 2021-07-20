@@ -17,7 +17,7 @@ struct FCN : ROOT::Minuit2::FCNGradientBase {
 
   double operator()(const std::vector<double>& x) const override;
   std::vector<double> Gradient(const std::vector<double>&) const override;
-  bool CheckGradient() const override { return false; }
+  bool CheckGradient() const override { return check_gradient_; }
 
   double Up() const override;
   void SetUp(double x) { errordef_ = x; }
@@ -34,5 +34,6 @@ struct FCN : ROOT::Minuit2::FCNGradientBase {
   using cfcn_t = double (*)(std::uint32_t, const double*);
   cfcn_t cfcn_ = nullptr;
   bool throw_nan_ = false;
+  bool check_gradient_ = false;
   mutable unsigned nfcn_ = 0, ngrad_ = 0;
 };

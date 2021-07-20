@@ -115,6 +115,7 @@ void bind_fcn(py::module m) {
       .def_readwrite("_nfcn", &FCN::nfcn_)
       .def_readwrite("_ngrad", &FCN::ngrad_)
       .def_readwrite("_throw_nan", &FCN::throw_nan_)
+      .def_readwrite("_check_gradient", &FCN::check_gradient_)
       .def_property("_errordef", &FCN::Up, &set_errordef)
       .def_readonly("_array_call", &FCN::array_call_)
       .def_readonly("_fcn", &FCN::fcn_)
@@ -125,15 +126,16 @@ void bind_fcn(py::module m) {
       .def(py::pickle(
           [](const FCN& self) {
             return py::make_tuple(self.fcn_, self.grad_, self.array_call_,
-                                  self.errordef_, self.throw_nan_, self.nfcn_,
-                                  self.ngrad_);
+                                  self.errordef_, self.throw_nan_, self.check_gradient_,
+                                  self.nfcn_, self.ngrad_);
           },
           [](py::tuple tp) {
-            if (tp.size() != 7) throw std::runtime_error("invalid state");
+            if (tp.size() != 8) throw std::runtime_error("invalid state");
             FCN fcn{tp[0], tp[1], tp[2].cast<bool>(), tp[3].cast<double>()};
             fcn.throw_nan_ = tp[4].cast<bool>();
-            fcn.nfcn_ = tp[5].cast<unsigned>();
-            fcn.ngrad_ = tp[6].cast<unsigned>();
+            fcn.throw_nan_ = tp[5].cast<bool>();
+            fcn.nfcn_ = tp[6].cast<unsigned>();
+            fcn.ngrad_ = tp[7].cast<unsigned>();
             return fcn;
           }))
 
