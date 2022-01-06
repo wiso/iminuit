@@ -254,6 +254,28 @@ class Cost(abc.ABC):
             print(args, "->", r)
         return r
 
+    def variance_estimate(self, *args):
+        """
+        Return the sandwich estimate of variance of the parameters.
+
+        Parameters
+        ----------
+        *args : float
+            Parameter values.
+
+        Returns
+        -------
+        np.ndarray
+            Square matrix of the covariance of the parameters with shape (N, N) for
+            N parameters.
+        """
+        # return np.sum(self._vscore(args), axis=0)
+        # TODO
+
+        # def score_variance(self, args):
+        #     vs = self._vscore(args)
+        #     return np.sum(vs[:, np.newaxis] * vs[..., np.newaxis], axis=0)
+
 
 class Constant(Cost):
     """
@@ -277,6 +299,14 @@ class Constant(Cost):
 
     def _call(self, args):
         return self.value
+
+    def score(self, args):
+        """Return score."""
+        return 0
+
+    def score_variance(self, args):
+        """Return variance of score."""
+        return 0
 
 
 class CostSum(Cost, Sequence):
@@ -338,6 +368,28 @@ class CostSum(Cost, Sequence):
         for c, map in zip(self._items, self._maps):
             c_args = tuple(args[i] for i in map)
             r += c._call(c_args)
+        return r
+
+    def _vscore(self, args):
+        n = len(args)
+        r = np.zeros(n)
+        i = 0
+        for c, map in zip(self._items, self._maps):
+            c_args = tuple(args[i] for i in map)
+            n = len(c_args)
+            r[i : i + n] += c._score(c_args)
+            i += n
+        return r
+
+    def _score_variance(self, args):
+        n = len(args)
+        r = np.zeros((n, n))
+        i = 0
+        for c, map in zip(self._items, self._maps):
+            c_args = tuple(args[i] for i in map)
+            n = len(c_args)
+            r[i : i + n, i : i + n] += c._score_variance(c_args)
+            i += n
         return r
 
     @Cost.ndata.getter
@@ -449,10 +501,16 @@ class UnbinnedNLL(UnbinnedCost):
         super().__init__(data, pdf, verbose)
 
     def _call(self, args):
-        data = self._masked
-        pdf = self._model(data, *args)
-        pdf = _check_model_output(pdf)
-        return -2.0 * _sum_log_x(pdf)
+        d = self._masked
+        p = self._model(d, *args)
+        p = _check_model_output(p)
+        return -2.0 * _sum_log_x(p)
+
+    def _vscore(self, args):
+        d = self._masked
+        p = self._model(d, *args)
+        g = self._model_grad(d, *args)
+        return g / (p + 1e-323)
 
 
 class ExtendedUnbinnedNLL(UnbinnedCost):
@@ -494,6 +552,20 @@ class ExtendedUnbinnedNLL(UnbinnedCost):
             spdf, "Model should return numpy array in second position"
         )
         return 2.0 * (ns - _sum_log_x(spdf))
+
+    def _score(self, args):
+        d = self._masked
+        p = self._model(d, *args)
+        g = self._model_grad(d, *args)
+        gp = g / (p + 1e-323)
+        return np.sum(gp, axis=0)
+
+    def _score_variance(self, args):
+        d = self._masked
+        p = self._model(d, *args)
+        g = self._model_grad(d, *args)
+        gp = g / (p + 1e-323)
+        return np.sum(gp[:, np.newaxis] * gp[..., np.newaxis], axis=0)
 
 
 class BinnedCost(MaskedCost):

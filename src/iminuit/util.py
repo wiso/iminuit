@@ -906,56 +906,120 @@ class MErrors(OrderedDict):
 
 
 def _jacobi(
-    fn: Callable, x: np.ndarray, dx: np.ndarray, tol: float, debug: bool = False
+    fn: Callable,
+    x: np.ndarray,
+    dx: Optional[np.ndarray] = None,
+    rtol: float = 0,
+    debug: bool = False,
 ) -> Tuple[np.ndarray, np.ndarray]:
+    """
+    Compute the Jacobi matrix of a vector-valued function.
+
+    Notes
+    -----
+    The function can be a generic mapping from ℝ¹ ⟶ ℝⁿ with n ≧ 0. If the output is
+    not a scalar, the it must be a numpy array.
+    """
     assert x.ndim == 1
-    assert dx.ndim == 1
-    assert np.all(dx >= 0)
-    assert tol > 0
+    if dx is None:
+        # dx = sqrt(eps) * x optimal for forward/backward difference
+        # https://en.wikipedia.org/wiki/Numerical_differentiation#Step_size
+        sqrt_eps = np.sqrt(np.finfo(x.dtype).resolution)
+        dx = np.where(x == 0, sqrt_eps, np.abs(x) * sqrt_eps)
+    else:
+        assert dx.ndim == 1
+        assert np.all(dx >= 0)
+    assert rtol >= 0
     y = fn(x)
-    yrank = np.ndim(y)
-    jac = np.zeros((1 if yrank == 0 else len(y), len(x)))
+    y_shape = np.shape(y)
+    jac = np.empty((*y_shape, len(x)))
     h = np.zeros(len(x))
-    divergence = True
-    for i, hi in enumerate(dx):
+
+    # Compute derivative for each argument
+    def deriv(fn, x, h, i):
+        xp = x + h
+        xm = x - h
+        yp = fn(xp)
+        ym = fn(xm)
+        # computing dx like this improves precision, see
+        # https://en.wikipedia.org/wiki/Numerical_differentiation#Step_size
+        dp = (yp - y) / (xp[i] - x[i])
+        dm = (ym - y) / (xm[i] - x[i])
+        d = 0.5 * (dp + dm)
+        derr = np.abs(dp - dm)
+        return d, derr
+
+    for i, dxi in enumerate(dx):
         if i > 0:
             h[i - 1] = 0
-        if hi == 0:
+
+        # skip this variable if dx[i] is zero
+        if dxi == 0:
+            jac[:, i] = 0
             continue
-        h[i] = hi
-        prev_esq = np.inf
-        for iter in range(20):
-            assert h[i] > 0
-            yu = fn(x + h)
-            yd = fn(x - h)
-            du = (yu - y) / h[i]
-            dd = (y - yd) / h[i]
-            d = 0.5 * (du + dd)
-            delta = du - dd
-            if np.all(np.abs(delta) <= tol * np.abs(d)):
+
+        h[i] = dxi
+
+        converged = np.zeros(y_shape, dtype=bool)
+        prev_esq = np.full(y_shape, np.inf)
+
+        # first try to converge by making step size smaller, then by making them larger
+        for hfac in (0.1, 10.0):
+            for iter in range(20):
+                assert h[i] > 0
+                d, derr = deriv(fn, x, h, i)
+
+                if rtol > 0:
+                    newly_converged = ~converged & (derr <= rtol * np.abs(d))
+                    if np.any(newly_converged):
+                        jac[newly_converged, i] = d[newly_converged]
+                        converged |= newly_converged
+
+                    # early stop when everything is below tolerance
+                    if np.all(converged):
+                        break
+
+                # check for convergence of stepping algorithm
+                esq = derr * derr
+                converging = esq < prev_esq
+
+                if iter == 0:
+                    if np.any(~converging):
+                        if debug:
+                            print(
+                                f"jacobi: ipar={i} divergence detected "
+                                f"in {np.sum(~converging)} points"
+                            )
+                        jac[~converging, i] = np.nan
+                        converged[~converging] = True
+                else:
+                    # points have converged, which were previously converging
+                    # and are now diverging
+                    converged |= ~converging
+
+                if np.any(converging):
+                    m = converging & ~converged
+                    jac[m, i] = d[m]
+
                 if debug:
                     print(
-                        f"jacobi: iter={iter} converged; delta={delta} "
-                        f"threshold={tol * np.abs(d)}"
+                        f"jacobi: ipar={i} iter={iter}\n"
+                        f"{np.sum(converged)} of {np.prod(converged.shape)} converged\n"
+                        f"h={h[i]}\n"
+                        f"d={d}\n"
+                        f"derr={derr}\n"
+                        f"rtol * abs(d)={rtol * np.abs(d)}"
                     )
-                jac[:, i] = d
-                break
-            esq = np.dot(delta, delta)
-            if debug:
-                print(f"jacobi: iter={iter} d={d} esq={esq} h={h}")
-            if iter > 0 and esq < prev_esq:
-                divergence = False
-            if esq >= prev_esq:
-                if divergence:
-                    print(f"jacobi: iter={iter} divergence detected")
-                    jac[:, i] = np.nan
-                else:
-                    print(f"jacobi: iter={iter} no convergence")
-                    # no convergence, use previous more accurate jac[:, i]
-                break
-            jac[:, i] = d
-            prev_esq = esq
-            h[i] *= 0.1
+
+                if np.all(converged):
+                    break
+
+                prev_esq = esq
+                h[i] *= hfac
+
+        # try diverging points again in second iteration
+        converged[np.isnan(jac[:, i])] = False
+
     return y, jac
 
 
