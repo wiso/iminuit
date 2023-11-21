@@ -1,11 +1,7 @@
 name: Test
 
 on:
-  pull_request:
-    paths-ignore:
-      - 'doc/**'
-      - '.ci/**'
-      - '*.rst'
+  push
 
 env:
   CMAKE_ARGS: -DCMAKE_CXX_COMPILER_LAUNCHER=ccache
