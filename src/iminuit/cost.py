@@ -2221,6 +2221,7 @@ class LeastSquares(MaskedCostWithPulls):
         return self._model_grad is not None and self._cost_grad is not None
 
 
+
 class NormalConstraint(Cost):
     """
     Gaussian penalty for one or several parameters.
