@@ -3,6 +3,7 @@ name: Test
 on:
   push
 
+
 env:
   CMAKE_ARGS: -DCMAKE_CXX_COMPILER_LAUNCHER=ccache
   # Latest Jupyter requires this to acknowledge deprecation
